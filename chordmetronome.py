@@ -173,7 +173,6 @@ HTML = r'''<!doctype html>
       <div class="switch-row"><span>Show chord diagram</span><label class="switch"><input id="showDiagram" type="checkbox" checked><span class="slider"></span></label></div>
       <div class="switch-row"><span>Accent the first beat</span><label class="switch"><input id="accent" type="checkbox" checked><span class="slider"></span></label></div>
       <div class="switch-row"><span>Two-bar count-in</span><label class="switch"><input id="countIn" type="checkbox"><span class="slider"></span></label></div>
-      <div class="switch-row"><span>Keep screen awake while playing</span><label class="switch"><input id="keepAwake" type="checkbox" checked><span class="slider"></span></label></div>
       <div class="sequence" id="sequencePreview"><strong>Sequence:</strong> G → D → Em → C</div>
     </section>
     <p class="hint">Keep this page open while practising. Your settings are saved automatically on this device.</p>
@@ -265,7 +264,7 @@ HTML = r'''<!doctype html>
     return {frets, fingers:quality.fingers, baseFret:rootFret, barre:rootFret};
   }
   const chordShapes = Object.fromEntries(chordNames.map(name => [name, makeShape(name)]));
-  const defaults = { bpm:80, beatsPerBar:4, changeEvery:4, mode:'sequence', accent:true, countIn:false, showDiagram:true, keepAwake:true, selected:['G','D','Em','C'] };
+  const defaults = { bpm:80, beatsPerBar:4, changeEvery:4, mode:'sequence', accent:true, countIn:false, showDiagram:true, selected:['G','D','Em','C'] };
   const saved = JSON.parse(localStorage.getItem('chordMetronomeSettings') || 'null');
   const state = {...defaults, ...(saved || {})};
 
@@ -291,7 +290,7 @@ HTML = r'''<!doctype html>
     bpm.value = state.bpm; bpmValue.textContent = state.bpm;
     $('beatsPerBar').value = String(state.beatsPerBar);
     $('changeEvery').value = String(state.changeEvery);
-    $('mode').value = state.mode; $('accent').checked = state.accent; $('countIn').checked = state.countIn; $('showDiagram').checked = state.showDiagram; $('keepAwake').checked = state.keepAwake;
+    $('mode').value = state.mode; $('accent').checked = state.accent; $('countIn').checked = state.countIn; $('showDiagram').checked = state.showDiagram;
     renderPicks(); renderBeats(); updateChordText(); toggleDiagram();
   }
 
@@ -562,7 +561,7 @@ HTML = r'''<!doctype html>
   }
 
   async function requestWakeLock() {
-    if (!state.keepAwake || !isPlaying || !('wakeLock' in navigator)) return;
+    if (!isPlaying || !('wakeLock' in navigator)) return;
     try {
       wakeLock = await navigator.wakeLock.request('screen');
       wakeLock.addEventListener('release', () => { wakeLock = null; });
@@ -644,10 +643,6 @@ HTML = r'''<!doctype html>
   $('showDiagram').onchange = e => { state.showDiagram=e.target.checked; toggleDiagram(); save(); };
   $('accent').onchange = e => { state.accent=e.target.checked; save(); };
   $('countIn').onchange = e => { state.countIn=e.target.checked; save(); };
-  $('keepAwake').onchange = async e => {
-    state.keepAwake=e.target.checked; save();
-    if (state.keepAwake) await requestWakeLock(); else await releaseWakeLock();
-  };
   document.addEventListener('visibilitychange', async () => {
     if (document.visibilityState === 'visible' && isPlaying) {
       if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume();

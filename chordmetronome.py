@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
-app = FastAPI(title="Chord Metronome — Complete Chord Library")
+app = FastAPI(title="Chord Metronome — Practice and Chord Player")
 
 HTML = r'''<!doctype html>
 <html lang="en">
@@ -89,11 +89,47 @@ HTML = r'''<!doctype html>
     .sequence { margin-top:14px; color:var(--muted); font-size:12px; line-height:1.7; padding:12px 13px; border-radius:14px; background:rgba(255,255,255,.035); border:1px solid var(--line); }
     .sequence strong { color:white; }
     .hint { margin:14px 4px 0; text-align:center; color:#697386; font-size:11px; line-height:1.5; }
+    .top-tabs { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px; padding:5px; border:1px solid var(--line); border-radius:16px; background:rgba(20,25,38,.70); }
+    .tab-btn { border:0; border-radius:12px; padding:12px; color:var(--muted); background:transparent; cursor:pointer; font-weight:800; }
+    .tab-btn.active { color:white; background:linear-gradient(135deg,rgba(139,92,246,.55),rgba(34,211,238,.25)); box-shadow:inset 0 0 0 1px rgba(255,255,255,.08); }
+    .page { display:none; }
+    .page.active { display:block; }
+    .player-card { padding:22px 18px; text-align:center; }
+    .player-heading { margin:0 0 14px; font-size:20px; }
+    .chord-picker-button { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-width:132px; border:1px solid var(--line); border-radius:16px; background:var(--panel-2); color:white; padding:10px 16px; cursor:pointer; font-size:34px; font-weight:850; letter-spacing:-.04em; }
+    .chord-picker-button .chevron { color:var(--muted); font-size:15px; transform:translateY(1px); }
+    .player-diagram { display:flex; justify-content:center; min-height:184px; margin:6px 0 4px; cursor:pointer; border-radius:18px; }
+    .player-diagram:active { background:rgba(255,255,255,.025); }
+    .primary-player { width:100%; min-height:54px; border:0; border-radius:16px; background:linear-gradient(135deg,var(--accent),var(--cyan)); color:white; cursor:pointer; font-weight:850; font-size:15px; box-shadow:0 12px 28px rgba(65,113,255,.16); }
+    .play-mode { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:10px; padding:5px; border:1px solid var(--line); border-radius:14px; background:rgba(255,255,255,.025); }
+    .mode-btn { border:0; border-radius:10px; padding:10px 8px; color:var(--muted); background:transparent; cursor:pointer; font-weight:750; }
+    .mode-btn.active { color:white; background:var(--panel-2); box-shadow:inset 0 0 0 1px var(--line); }
+    .strum-direction { display:flex; align-items:center; justify-content:center; gap:7px; margin-top:10px; color:var(--muted); font-size:12px; }
+    .direction-btn { border:1px solid var(--line); border-radius:999px; background:var(--panel-2); color:#dce4f3; padding:7px 12px; cursor:pointer; font-weight:750; }
+    .direction-btn.active { border-color:rgba(167,139,250,.8); color:white; background:rgba(139,92,246,.18); }
+    .volume-row { margin-top:15px; text-align:left; }
+    .picker-backdrop { position:fixed; inset:0; z-index:50; display:none; align-items:flex-end; background:rgba(0,0,0,.62); backdrop-filter:blur(6px); }
+    .picker-backdrop.open { display:flex; }
+    .picker-sheet { width:100%; max-height:82vh; padding:18px; border:1px solid var(--line); border-radius:24px 24px 0 0; background:#101522; box-shadow:0 -20px 60px rgba(0,0,0,.45); }
+    .picker-handle { width:44px; height:4px; margin:0 auto 15px; border-radius:999px; background:#3a4255; }
+    .picker-header { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; }
+    .picker-title { margin:0; font-size:18px; }
+    .picker-close { width:36px; height:36px; border:1px solid var(--line); border-radius:12px; background:var(--panel-2); color:white; cursor:pointer; font-size:18px; }
+    .picker-search { width:100%; border:1px solid var(--line); border-radius:14px; background:var(--panel-2); color:white; padding:13px 14px; outline:none; }
+    .picker-grid { display:flex; flex-wrap:wrap; gap:8px; max-height:55vh; overflow:auto; margin-top:12px; padding:1px 2px 14px; }
+    .picker-option { min-width:48px; border:1px solid var(--line); border-radius:12px; background:var(--panel-2); color:#dce4f3; padding:10px 12px; cursor:pointer; }
+    .picker-option.active { border-color:rgba(167,139,250,.85); background:rgba(139,92,246,.2); color:white; }
     @media (min-width: 620px) { body { padding-top:34px; } .stage { padding:27px 25px 23px; } .controls { padding:21px; } }
   </style>
 </head>
 <body>
   <main class="app">
+    <nav class="top-tabs" aria-label="App pages">
+      <button class="tab-btn active" id="practiceTab" type="button">Practice</button>
+      <button class="tab-btn" id="playerTab" type="button">Chord Player</button>
+    </nav>
+
+    <div class="page active" id="practicePage">
     <section class="card stage">
       <div class="eyebrow" id="status">Ready</div>
       <div class="chord" id="currentChord">G</div>
@@ -138,6 +174,32 @@ HTML = r'''<!doctype html>
       <div class="sequence" id="sequencePreview"><strong>Sequence:</strong> G → D → Em → C</div>
     </section>
     <p class="hint">Keep this page open while practising. Your settings are saved automatically on this device.</p>
+    </div>
+
+    <div class="page" id="playerPage">
+      <section class="card player-card">
+        <h1 class="player-heading">Chord Player</h1>
+        <button class="chord-picker-button" id="openChordPicker" type="button" aria-haspopup="dialog"><span id="playerChordName">G</span><span class="chevron">▼</span></button>
+        <div class="player-diagram" id="playerDiagramTap" title="Tap to play"><svg class="chord-diagram" id="playerChordDiagram" viewBox="0 0 150 176" aria-label="G chord diagram"></svg></div>
+        <button class="primary-player" id="playSelectedChord" type="button">▶ Play chord</button>
+        <div class="play-mode" aria-label="Playback style">
+          <button class="mode-btn active" id="strumMode" type="button">Strum</button>
+          <button class="mode-btn" id="arpeggioMode" type="button">Arpeggio</button>
+        </div>
+        <div class="strum-direction" id="directionControls">Direction <button class="direction-btn active" id="downDirection" type="button">↓ Down</button><button class="direction-btn" id="upDirection" type="button">↑ Up</button></div>
+        <div class="volume-row"><label>Volume<input id="playerVolume" type="range" min="0.15" max="1" step="0.05" value="0.7"></label></div>
+      </section>
+    </div>
+  </main>
+
+  <div class="picker-backdrop" id="chordPicker" role="dialog" aria-modal="true" aria-labelledby="pickerTitle">
+    <div class="picker-sheet">
+      <div class="picker-handle"></div>
+      <div class="picker-header"><h2 class="picker-title" id="pickerTitle">Choose a chord</h2><button class="picker-close" id="closeChordPicker" type="button" aria-label="Close">×</button></div>
+      <input class="picker-search" id="playerChordSearch" placeholder="Search chords…" autocomplete="off">
+      <div class="picker-grid" id="playerChordGrid"></div>
+    </div>
+  </div>
   </main>
 
 <script>
@@ -210,6 +272,9 @@ HTML = r'''<!doctype html>
   const beatsEl = $('beats'), picksEl = $('chordPicks'), preview = $('sequencePreview'), chordSearch = $('chordSearch');
   const diagram = $('chordDiagram'), diagramWrap = $('diagramWrap');
   const barProgressFill = $('barProgressFill');
+  const playerChordSearch = $('playerChordSearch'), playerChordName = $('playerChordName'), playerDiagram = $('playerChordDiagram');
+  const playerChordGrid = $('playerChordGrid'), chordPicker = $('chordPicker');
+  let playerChord = 'G', playerMode = 'strum', strumDirection = 'down';
 
   let audioCtx = null, isPlaying = false, schedulerId = null;
   let nextNoteTime = 0, beatIndex = 0, totalBeat = 0, chordIndex = 0, currentName = state.selected[0];
@@ -234,42 +299,42 @@ HTML = r'''<!doctype html>
     return el;
   }
 
-  function renderChordDiagram(name) {
+  function renderChordDiagram(name, target = diagram) {
     const shape = chordShapes[name];
-    diagram.innerHTML = '';
-    diagram.setAttribute('aria-label', name + ' chord diagram');
+    target.innerHTML = '';
+    target.setAttribute('aria-label', name + ' chord diagram');
     if (!shape) return;
 
     const x0=25, y0=35, stringGap=20, fretGap=28;
     const base = shape.baseFret || 1;
 
-    for (let s=0; s<6; s++) diagram.appendChild(svgEl('line',{x1:x0+s*stringGap,y1:y0,x2:x0+s*stringGap,y2:y0+4*fretGap,class:'string'}));
-    for (let f=0; f<=4; f++) diagram.appendChild(svgEl('line',{x1:x0,y1:y0+f*fretGap,x2:x0+5*stringGap,y2:y0+f*fretGap,class:f===0 && base===1 ? 'nut':'fret'}));
+    for (let s=0; s<6; s++) target.appendChild(svgEl('line',{x1:x0+s*stringGap,y1:y0,x2:x0+s*stringGap,y2:y0+4*fretGap,class:'string'}));
+    for (let f=0; f<=4; f++) target.appendChild(svgEl('line',{x1:x0,y1:y0+f*fretGap,x2:x0+5*stringGap,y2:y0+f*fretGap,class:f===0 && base===1 ? 'nut':'fret'}));
 
     if (base > 1) {
-      const t=svgEl('text',{x:8,y:y0+18,fill:'#94a3b8','font-size':'13','font-weight':'700'}); t.textContent=base+'fr'; diagram.appendChild(t);
+      const t=svgEl('text',{x:8,y:y0+18,fill:'#94a3b8','font-size':'13','font-weight':'700'}); t.textContent=base+'fr'; target.appendChild(t);
     }
 
     shape.frets.forEach((f,s) => {
       const x=x0+s*stringGap;
-      if (f === 0) diagram.appendChild(svgEl('circle',{cx:x,cy:17,r:8,class:'open'}));
+      if (f === 0) target.appendChild(svgEl('circle',{cx:x,cy:17,r:8,class:'open'}));
       if (f === -1) {
-        diagram.appendChild(svgEl('line',{x1:x-6,y1:11,x2:x+6,y2:23,class:'mute'}));
-        diagram.appendChild(svgEl('line',{x1:x+6,y1:11,x2:x-6,y2:23,class:'mute'}));
+        target.appendChild(svgEl('line',{x1:x-6,y1:11,x2:x+6,y2:23,class:'mute'}));
+        target.appendChild(svgEl('line',{x1:x+6,y1:11,x2:x-6,y2:23,class:'mute'}));
       }
       if (f > 0) {
         const displayFret = base > 1 ? f-base+1 : f;
         const cy=y0+(displayFret-.5)*fretGap;
-        diagram.appendChild(svgEl('circle',{cx:x,cy,r:13,class:'marker'}));
+        target.appendChild(svgEl('circle',{cx:x,cy,r:13,class:'marker'}));
         const finger=(shape.fingers||[])[s];
-        if (finger) { const t=svgEl('text',{x,y:cy,class:'finger'}); t.textContent=finger; diagram.appendChild(t); }
+        if (finger) { const t=svgEl('text',{x,y:cy,class:'finger'}); t.textContent=finger; target.appendChild(t); }
       }
     });
 
     if (shape.barre) {
       const displayFret = base > 1 ? shape.barre-base+1 : shape.barre;
       const cy=y0+(displayFret-.5)*fretGap;
-      diagram.insertBefore(svgEl('line',{x1:x0,y1:cy,x2:x0+5*stringGap,y2:cy,stroke:'#60a5fa','stroke-width':'18','stroke-linecap':'round'}), diagram.firstChild);
+      target.insertBefore(svgEl('line',{x1:x0,y1:cy,x2:x0+5*stringGap,y2:cy,stroke:'#60a5fa','stroke-width':'18','stroke-linecap':'round'}), target.firstChild);
     }
   }
 
@@ -331,6 +396,113 @@ HTML = r'''<!doctype html>
     nextChord.textContent = 'Next: ' + peekNext();
     renderChordDiagram(currentName);
     preview.innerHTML = '<strong>Sequence:</strong> ' + state.selected.join(' → ');
+  }
+
+
+  function showPage(page) {
+    const practice = page === 'practice';
+    $('practicePage').classList.toggle('active', practice);
+    $('playerPage').classList.toggle('active', !practice);
+    $('practiceTab').classList.toggle('active', practice);
+    $('playerTab').classList.toggle('active', !practice);
+    if (!practice) updatePlayerChord(playerChord);
+  }
+
+  function renderPlayerChordGrid() {
+    const query = (playerChordSearch.value || '').trim().toLowerCase();
+    playerChordGrid.innerHTML = '';
+    chordNames.filter(name => !query || name.toLowerCase().includes(query)).forEach(name => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'picker-option' + (name === playerChord ? ' active' : '');
+      button.textContent = name;
+      button.onclick = () => { updatePlayerChord(name); closeChordPicker(); };
+      playerChordGrid.appendChild(button);
+    });
+  }
+
+  function openChordPicker() {
+    playerChordSearch.value = '';
+    renderPlayerChordGrid();
+    chordPicker.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    setTimeout(() => playerChordSearch.focus(), 50);
+  }
+
+  function closeChordPicker() {
+    chordPicker.classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  function updatePlayerChord(name) {
+    if (!chordShapes[name]) return;
+    playerChord = name;
+    playerChordName.textContent = name;
+    renderChordDiagram(name, playerDiagram);
+    renderPlayerChordGrid();
+  }
+
+  function setPlayerMode(mode) {
+    playerMode = mode;
+    $('strumMode').classList.toggle('active', mode === 'strum');
+    $('arpeggioMode').classList.toggle('active', mode === 'arpeggio');
+    $('directionControls').style.display = mode === 'strum' ? 'flex' : 'none';
+    $('playSelectedChord').textContent = mode === 'strum' ? '▶ Play chord' : '♪ Play arpeggio';
+  }
+
+  function setStrumDirection(direction) {
+    strumDirection = direction;
+    $('downDirection').classList.toggle('active', direction === 'down');
+    $('upDirection').classList.toggle('active', direction === 'up');
+  }
+
+  function playCurrentSelection() {
+    playChord(playerMode === 'arpeggio' ? 'arpeggio' : strumDirection);
+  }
+
+  function ensureAudioContext() {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)({ latencyHint:'interactive' });
+    return audioCtx.resume();
+  }
+
+  function midiToHz(midi) { return 440 * Math.pow(2, (midi - 69) / 12); }
+
+  function pluckString(midi, when, volume=0.7) {
+    const frequency = midiToHz(midi);
+    const duration = 2.4;
+    const length = Math.max(2, Math.floor(audioCtx.sampleRate * duration));
+    const buffer = audioCtx.createBuffer(1, length, audioCtx.sampleRate);
+    const data = buffer.getChannelData(0);
+    const period = Math.max(2, Math.floor(audioCtx.sampleRate / frequency));
+    for (let i=0; i<period && i<length; i++) data[i] = Math.random() * 2 - 1;
+    const damping = 0.996 - Math.min(0.003, frequency / 200000);
+    for (let i=period; i<length; i++) data[i] = damping * 0.5 * (data[i-period] + data[i-period+1]);
+
+    const source = audioCtx.createBufferSource();
+    const filter = audioCtx.createBiquadFilter();
+    const gain = audioCtx.createGain();
+    source.buffer = buffer;
+    filter.type = 'lowpass';
+    filter.frequency.value = Math.min(6500, frequency * 9);
+    filter.Q.value = 0.45;
+    gain.gain.setValueAtTime(Math.max(0.0001, volume * 0.34), when);
+    gain.gain.exponentialRampToValueAtTime(0.0001, when + duration);
+    source.connect(filter); filter.connect(gain); gain.connect(audioCtx.destination);
+    source.start(when); source.stop(when + duration);
+  }
+
+  async function playChord(direction='down') {
+    await ensureAudioContext();
+    if ('audioSession' in navigator) { try { navigator.audioSession.type = 'playback'; } catch (_) {} }
+    const shape = chordShapes[playerChord];
+    const openMidi = [40,45,50,55,59,64];
+    const notes = shape.frets.map((f,i) => f < 0 ? null : openMidi[i] + f)
+      .map((midi,i) => ({midi,index:i})).filter(n => n.midi !== null);
+    if (direction === 'up') notes.reverse();
+    const spacing = direction === 'arpeggio' ? 0.22 : 0.045;
+    const now = audioCtx.currentTime + 0.04;
+    const volume = Number($('playerVolume').value);
+    notes.forEach((note,i) => pluckString(note.midi, now + i * spacing, volume));
   }
 
 
@@ -479,6 +651,22 @@ HTML = r'''<!doctype html>
       await requestWakeLock();
     }
   });
+  $('practiceTab').onclick = () => showPage('practice');
+  $('playerTab').onclick = () => showPage('player');
+  $('openChordPicker').onclick = openChordPicker;
+  $('closeChordPicker').onclick = closeChordPicker;
+  chordPicker.onclick = e => { if (e.target === chordPicker) closeChordPicker(); };
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeChordPicker(); });
+  playerChordSearch.oninput = renderPlayerChordGrid;
+  $('strumMode').onclick = () => setPlayerMode('strum');
+  $('arpeggioMode').onclick = () => setPlayerMode('arpeggio');
+  $('downDirection').onclick = () => setStrumDirection('down');
+  $('upDirection').onclick = () => setStrumDirection('up');
+  $('playSelectedChord').onclick = playCurrentSelection;
+  $('playerDiagramTap').onclick = playCurrentSelection;
+  setPlayerMode('strum');
+  setStrumDirection('down');
+  updatePlayerChord(playerChord);
   syncControls();
 })();
 </script>

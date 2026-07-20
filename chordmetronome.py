@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
-app = FastAPI(title="Chord Metronome — Diagrams v2")
+app = FastAPI(title="Chord Metronome — Diagrams v3")
 
 HTML = r'''<!doctype html>
 <html lang="en">
@@ -59,7 +59,9 @@ HTML = r'''<!doctype html>
     .chord-diagram .open { fill:none; stroke:#94a3b8; stroke-width:3; }
     .chord-diagram .mute { stroke:#94a3b8; stroke-width:3; stroke-linecap:round; }
     .diagram-caption { color:var(--muted); font-size:10px; letter-spacing:.08em; text-transform:uppercase; margin-top:3px; }
-    .beats { display:flex; justify-content:center; gap:11px; margin:18px 0 17px; position:relative; }
+    .bar-progress { position:relative; width:min(100%, 320px); height:5px; margin:17px auto 10px; overflow:hidden; border-radius:999px; background:rgba(255,255,255,.09); }
+    .bar-progress-fill { width:0%; height:100%; border-radius:inherit; background:linear-gradient(90deg,var(--accent),var(--accent-2)); box-shadow:0 0 14px rgba(34,211,238,.42); transform-origin:left center; }
+    .beats { display:flex; justify-content:center; gap:11px; margin:10px 0 17px; position:relative; }
     .beat { width:12px; height:12px; border-radius:50%; background:#343b4d; transition:transform .08s ease, background .08s ease, box-shadow .08s ease; }
     .beat.active { background:var(--accent-2); transform:scale(1.45); box-shadow:0 0 22px rgba(34,211,238,.9); }
     .beat.downbeat.active { background:var(--accent); box-shadow:0 0 24px rgba(139,92,246,.9); }
@@ -96,7 +98,7 @@ HTML = r'''<!doctype html>
 <body>
   <main class="app">
     <header class="topbar">
-      <div class="brand"><div class="logo">♪</div><div><h1>Chord Metronome</h1><p class="subtitle">Change cleanly. Stay in time. • Diagrams v2</p></div></div>
+      <div class="brand"><div class="logo">♪</div><div><h1>Chord Metronome</h1><p class="subtitle">Change cleanly. Stay in time. • Diagrams v3</p></div></div>
       <div class="status-pill" id="status">Ready</div>
     </header>
 
@@ -105,6 +107,7 @@ HTML = r'''<!doctype html>
       <div class="chord" id="currentChord">G</div>
       <div class="next" id="nextChord">Next: D</div>
       <div class="diagram-wrap" id="diagramWrap"><div><svg class="chord-diagram" id="chordDiagram" viewBox="0 0 150 176" aria-label="G chord diagram"></svg><div class="diagram-caption">Chord shape</div></div></div>
+      <div class="bar-progress" aria-hidden="true"><div class="bar-progress-fill" id="barProgressFill"></div></div>
       <div class="beats" id="beats"></div>
 
       <div class="tempo-row">
@@ -173,10 +176,11 @@ HTML = r'''<!doctype html>
   const currentChord = $('currentChord'), nextChord = $('nextChord'), status = $('status');
   const beatsEl = $('beats'), picksEl = $('chordPicks'), preview = $('sequencePreview');
   const diagram = $('chordDiagram'), diagramWrap = $('diagramWrap');
+  const barProgressFill = $('barProgressFill');
 
   let audioCtx = null, isPlaying = false, schedulerId = null;
   let nextNoteTime = 0, beatIndex = 0, totalBeat = 0, chordIndex = 0, currentName = state.selected[0];
-  let lookahead = 25, scheduleAhead = 0.12;
+  let lookahead = 25, scheduleAhead = 0.12, barProgressAnimation = null;
 
   function save() {
     localStorage.setItem('chordMetronomeSettings', JSON.stringify(state));
@@ -291,6 +295,24 @@ HTML = r'''<!doctype html>
     preview.innerHTML = '<strong>Sequence:</strong> ' + state.selected.join(' → ');
   }
 
+
+  function resetBarProgress() {
+    if (barProgressAnimation) {
+      barProgressAnimation.cancel();
+      barProgressAnimation = null;
+    }
+    barProgressFill.style.width = '0%';
+  }
+
+  function animateBarProgress() {
+    resetBarProgress();
+    const barDurationMs = (60 / state.bpm) * state.beatsPerBar * 1000;
+    barProgressAnimation = barProgressFill.animate(
+      [{ width: '0%' }, { width: '100%' }],
+      { duration: barDurationMs, easing: 'linear', fill: 'forwards' }
+    );
+  }
+
   function clickSound(time, downbeat) {
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
@@ -308,6 +330,7 @@ HTML = r'''<!doctype html>
     setTimeout(() => {
       if (!isPlaying) return;
       renderBeats(beat);
+      if (beat === 0) animateBarProgress();
       if (totalBeat > 0 && totalBeat % state.changeEvery === 0) {
         advanceChord(); updateChordText();
       }
@@ -338,16 +361,16 @@ HTML = r'''<!doctype html>
 
   function stop() {
     isPlaying = false; clearInterval(schedulerId); schedulerId = null;
-    renderBeats(); status.textContent = 'Ready';
+    renderBeats(); resetBarProgress(); status.textContent = 'Ready';
     startStop.textContent = '▶ START PRACTICE'; startStop.classList.remove('stop');
   }
 
   startStop.onclick = () => isPlaying ? stop() : start();
   $('minus').onclick = () => setBpm(state.bpm - 1);
   $('plus').onclick = () => setBpm(state.bpm + 1);
-  function setBpm(v) { state.bpm = Math.max(30, Math.min(220, Number(v))); bpm.value=state.bpm; bpmValue.textContent=state.bpm; save(); }
+  function setBpm(v) { state.bpm = Math.max(30, Math.min(220, Number(v))); bpm.value=state.bpm; bpmValue.textContent=state.bpm; if (isPlaying) animateBarProgress(); save(); }
   bpm.oninput = e => setBpm(e.target.value);
-  $('beatsPerBar').onchange = e => { state.beatsPerBar=Number(e.target.value); renderBeats(); save(); };
+  $('beatsPerBar').onchange = e => { state.beatsPerBar=Number(e.target.value); renderBeats(); if (isPlaying) animateBarProgress(); save(); };
   $('changeEvery').onchange = e => { state.changeEvery=Number(e.target.value); save(); };
   $('mode').onchange = e => { state.mode=e.target.value; chordIndex=0; updateChordText(); save(); };
   $('showDiagram').onchange = e => { state.showDiagram=e.target.checked; toggleDiagram(); save(); };

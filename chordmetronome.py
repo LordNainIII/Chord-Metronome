@@ -100,7 +100,10 @@ HTML = r'''<!doctype html>
     .chord-picker-button .chevron { color:var(--muted); font-size:15px; transform:translateY(1px); }
     .player-diagram { display:flex; justify-content:center; min-height:184px; margin:6px 0 4px; cursor:pointer; border-radius:18px; }
     .player-diagram:active { background:rgba(255,255,255,.025); }
-    .primary-player { width:100%; min-height:54px; border:0; border-radius:16px; background:linear-gradient(135deg,var(--accent),var(--cyan)); color:white; cursor:pointer; font-weight:850; font-size:15px; box-shadow:0 12px 28px rgba(65,113,255,.16); }
+    .primary-player { width:100%; min-height:68px; border:1px solid rgba(255,255,255,.2); border-radius:16px; background:linear-gradient(135deg,#7c3aed 0%,#4f7df3 52%,#10bfe3 100%); color:white; cursor:pointer; font-weight:900; font-size:18px; letter-spacing:.03em; box-shadow:0 14px 32px rgba(65,113,255,.28), inset 0 1px 0 rgba(255,255,255,.18); display:flex; align-items:center; justify-content:center; gap:12px; transition:transform .12s ease, filter .12s ease; }
+    .primary-player:hover { filter:brightness(1.06); }
+    .primary-player:active { transform:scale(.985); }
+    .play-icon { width:38px; height:38px; border-radius:999px; display:grid; place-items:center; background:rgba(255,255,255,.18); border:1px solid rgba(255,255,255,.24); font-size:18px; line-height:1; padding-left:2px; }
     .play-mode { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:10px; padding:5px; border:1px solid var(--line); border-radius:14px; background:rgba(255,255,255,.025); }
     .mode-btn { border:0; border-radius:10px; padding:10px 8px; color:var(--muted); background:transparent; cursor:pointer; font-weight:750; }
     .mode-btn.active { color:white; background:var(--panel-2); box-shadow:inset 0 0 0 1px var(--line); }
@@ -181,7 +184,7 @@ HTML = r'''<!doctype html>
         <h1 class="player-heading">Chord Player</h1>
         <button class="chord-picker-button" id="openChordPicker" type="button" aria-haspopup="dialog"><span id="playerChordName">G</span><span class="chevron">▼</span></button>
         <div class="player-diagram" id="playerDiagramTap" title="Tap to play"><svg class="chord-diagram" id="playerChordDiagram" viewBox="0 0 150 176" aria-label="G chord diagram"></svg></div>
-        <button class="primary-player" id="playSelectedChord" type="button">▶ Play chord</button>
+        <button class="primary-player" id="playSelectedChord" type="button" aria-label="Play chord"><span class="play-icon" aria-hidden="true">▶</span><span>PLAY</span></button>
         <div class="play-mode" aria-label="Playback style">
           <button class="mode-btn active" id="strumMode" type="button">Strum</button>
           <button class="mode-btn" id="arpeggioMode" type="button">Arpeggio</button>
@@ -447,7 +450,7 @@ HTML = r'''<!doctype html>
     $('strumMode').classList.toggle('active', mode === 'strum');
     $('arpeggioMode').classList.toggle('active', mode === 'arpeggio');
     $('directionControls').style.display = mode === 'strum' ? 'flex' : 'none';
-    $('playSelectedChord').textContent = mode === 'strum' ? '▶ Play chord' : '♪ Play arpeggio';
+    // Keep the primary action deliberately simple: icon + PLAY.
   }
 
   function setStrumDirection(direction) {

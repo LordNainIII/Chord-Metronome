@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
-app = FastAPI(title="Chord Metronome — Diagrams v3")
+app = FastAPI(title="Chord Metronome")
 
 HTML = r'''<!doctype html>
 <html lang="en">
@@ -37,12 +37,6 @@ HTML = r'''<!doctype html>
     button, input, select { font: inherit; }
     button { -webkit-tap-highlight-color: transparent; }
     .app { width: min(100%, 560px); margin: 0 auto; }
-    .topbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
-    .brand { display:flex; gap:11px; align-items:center; }
-    .logo { width:42px; height:42px; border-radius:14px; display:grid; place-items:center; background:linear-gradient(135deg,var(--accent),var(--accent-2)); box-shadow:0 10px 30px rgba(139,92,246,.32); font-size:21px; }
-    h1 { margin:0; font-size:18px; letter-spacing:-.02em; }
-    .subtitle { margin:2px 0 0; color:var(--muted); font-size:12px; }
-    .status-pill { border:1px solid var(--line); border-radius:999px; padding:7px 10px; color:var(--muted); font-size:12px; background:rgba(255,255,255,.04); }
     .card { background:var(--panel); border:1px solid var(--line); border-radius:25px; box-shadow:var(--shadow); backdrop-filter: blur(18px); }
     .stage { padding:20px 18px 18px; text-align:center; overflow:hidden; position:relative; }
     .stage:before { content:""; position:absolute; width:180px; height:180px; border-radius:50%; background:rgba(139,92,246,.12); filter:blur(20px); top:30px; left:50%; transform:translateX(-50%); pointer-events:none; }
@@ -97,13 +91,8 @@ HTML = r'''<!doctype html>
 </head>
 <body>
   <main class="app">
-    <header class="topbar">
-      <div class="brand"><div class="logo">♪</div><div><h1>Chord Metronome</h1><p class="subtitle">Change cleanly. Stay in time. • Diagrams v3</p></div></div>
-      <div class="status-pill" id="status">Ready</div>
-    </header>
-
     <section class="card stage">
-      <div class="eyebrow">Current chord</div>
+      <div class="eyebrow" id="status">Ready</div>
       <div class="chord" id="currentChord">G</div>
       <div class="next" id="nextChord">Next: D</div>
       <div class="diagram-wrap" id="diagramWrap"><div><svg class="chord-diagram" id="chordDiagram" viewBox="0 0 150 176" aria-label="G chord diagram"></svg><div class="diagram-caption">Chord shape</div></div></div>
@@ -141,6 +130,7 @@ HTML = r'''<!doctype html>
       <div class="switch-row"><span>Show chord diagram</span><label class="switch"><input id="showDiagram" type="checkbox" checked><span class="slider"></span></label></div>
       <div class="switch-row"><span>Accent the first beat</span><label class="switch"><input id="accent" type="checkbox" checked><span class="slider"></span></label></div>
       <div class="switch-row"><span>Two-bar count-in</span><label class="switch"><input id="countIn" type="checkbox"><span class="slider"></span></label></div>
+      <div class="switch-row"><span>Keep screen awake while playing</span><label class="switch"><input id="keepAwake" type="checkbox" checked><span class="slider"></span></label></div>
       <div class="sequence" id="sequencePreview"><strong>Sequence:</strong> G → D → Em → C</div>
     </section>
     <p class="hint">Keep this page open while practising. Your settings are saved automatically on this device.</p>
@@ -167,7 +157,7 @@ HTML = r'''<!doctype html>
     G:{frets:[3,2,0,0,0,3], fingers:[2,1,0,0,0,3]},
     G7:{frets:[3,2,0,0,0,1], fingers:[3,2,0,0,0,1]}
   };
-  const defaults = { bpm:80, beatsPerBar:4, changeEvery:4, mode:'sequence', accent:true, countIn:false, showDiagram:true, selected:['G','D','Em','C'] };
+  const defaults = { bpm:80, beatsPerBar:4, changeEvery:4, mode:'sequence', accent:true, countIn:false, showDiagram:true, keepAwake:true, selected:['G','D','Em','C'] };
   const saved = JSON.parse(localStorage.getItem('chordMetronomeSettings') || 'null');
   const state = {...defaults, ...(saved || {})};
 
@@ -180,7 +170,7 @@ HTML = r'''<!doctype html>
 
   let audioCtx = null, isPlaying = false, schedulerId = null;
   let nextNoteTime = 0, beatIndex = 0, totalBeat = 0, chordIndex = 0, currentName = state.selected[0];
-  let lookahead = 25, scheduleAhead = 0.12, barProgressAnimation = null;
+  let lookahead = 25, scheduleAhead = 0.12, barProgressAnimation = null, wakeLock = null;
 
   function save() {
     localStorage.setItem('chordMetronomeSettings', JSON.stringify(state));
@@ -190,7 +180,7 @@ HTML = r'''<!doctype html>
     bpm.value = state.bpm; bpmValue.textContent = state.bpm;
     $('beatsPerBar').value = String(state.beatsPerBar);
     $('changeEvery').value = String(state.changeEvery);
-    $('mode').value = state.mode; $('accent').checked = state.accent; $('countIn').checked = state.countIn; $('showDiagram').checked = state.showDiagram;
+    $('mode').value = state.mode; $('accent').checked = state.accent; $('countIn').checked = state.countIn; $('showDiagram').checked = state.showDiagram; $('keepAwake').checked = state.keepAwake;
     renderPicks(); renderBeats(); updateChordText(); toggleDiagram();
   }
 
@@ -314,14 +304,54 @@ HTML = r'''<!doctype html>
   }
 
   function clickSound(time, downbeat) {
+    const master = audioCtx.createGain();
+    const compressor = audioCtx.createDynamicsCompressor();
+    compressor.threshold.value = -18;
+    compressor.knee.value = 12;
+    compressor.ratio.value = 8;
+    compressor.attack.value = 0.001;
+    compressor.release.value = 0.08;
+    master.gain.value = downbeat && state.accent ? 1.25 : 0.9;
+    master.connect(compressor);
+    compressor.connect(audioCtx.destination);
+
     const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.frequency.value = downbeat && state.accent ? 1250 : 880;
-    gain.gain.setValueAtTime(0.0001, time);
-    gain.gain.exponentialRampToValueAtTime(downbeat && state.accent ? 0.72 : 0.48, time + 0.002);
-    gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.055);
-    osc.connect(gain); gain.connect(audioCtx.destination);
-    osc.start(time); osc.stop(time + 0.06);
+    const oscGain = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.value = downbeat && state.accent ? 1500 : 1000;
+    oscGain.gain.setValueAtTime(0.0001, time);
+    oscGain.gain.exponentialRampToValueAtTime(0.95, time + 0.001);
+    oscGain.gain.exponentialRampToValueAtTime(0.0001, time + 0.07);
+    osc.connect(oscGain); oscGain.connect(master);
+    osc.start(time); osc.stop(time + 0.075);
+
+    const length = Math.max(1, Math.floor(audioCtx.sampleRate * 0.025));
+    const buffer = audioCtx.createBuffer(1, length, audioCtx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / length);
+    const noise = audioCtx.createBufferSource();
+    const noiseGain = audioCtx.createGain();
+    noise.buffer = buffer;
+    noiseGain.gain.setValueAtTime(downbeat && state.accent ? 0.7 : 0.45, time);
+    noiseGain.gain.exponentialRampToValueAtTime(0.0001, time + 0.025);
+    noise.connect(noiseGain); noiseGain.connect(master);
+    noise.start(time); noise.stop(time + 0.03);
+  }
+
+  async function requestWakeLock() {
+    if (!state.keepAwake || !isPlaying || !('wakeLock' in navigator)) return;
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } catch (error) {
+      console.warn('Screen wake lock was not granted:', error);
+    }
+  }
+
+  async function releaseWakeLock() {
+    if (!wakeLock) return;
+    try { await wakeLock.release(); } catch (_) {}
+    wakeLock = null;
   }
 
   function scheduleNote(beat, time) {
@@ -347,7 +377,10 @@ HTML = r'''<!doctype html>
   }
 
   async function start() {
-    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if ('audioSession' in navigator) {
+      try { navigator.audioSession.type = 'playback'; } catch (_) {}
+    }
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
     await audioCtx.resume();
     isPlaying = true; beatIndex = 0; totalBeat = 0; chordIndex = 0; currentName = state.selected[0]; updateChordText();
     nextNoteTime = audioCtx.currentTime + 0.08;
@@ -356,11 +389,13 @@ HTML = r'''<!doctype html>
       totalBeat = -(state.beatsPerBar * 2);
     } else status.textContent = 'Practising';
     schedulerId = setInterval(scheduler, lookahead);
+    await requestWakeLock();
     startStop.textContent = '■ STOP'; startStop.classList.add('stop');
   }
 
   function stop() {
     isPlaying = false; clearInterval(schedulerId); schedulerId = null;
+    releaseWakeLock();
     renderBeats(); resetBarProgress(); status.textContent = 'Ready';
     startStop.textContent = '▶ START PRACTICE'; startStop.classList.remove('stop');
   }
@@ -376,7 +411,16 @@ HTML = r'''<!doctype html>
   $('showDiagram').onchange = e => { state.showDiagram=e.target.checked; toggleDiagram(); save(); };
   $('accent').onchange = e => { state.accent=e.target.checked; save(); };
   $('countIn').onchange = e => { state.countIn=e.target.checked; save(); };
-  document.addEventListener('visibilitychange', () => { if (document.hidden && isPlaying) stop(); });
+  $('keepAwake').onchange = async e => {
+    state.keepAwake=e.target.checked; save();
+    if (state.keepAwake) await requestWakeLock(); else await releaseWakeLock();
+  };
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'visible' && isPlaying) {
+      if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume();
+      await requestWakeLock();
+    }
+  });
   syncControls();
 })();
 </script>

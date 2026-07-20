@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
-app = FastAPI(title="Chord Metronome")
+app = FastAPI(title="Chord Metronome — Complete Chord Library")
 
 HTML = r'''<!doctype html>
 <html lang="en">
@@ -73,7 +73,10 @@ HTML = r'''<!doctype html>
     label { display:block; color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.04em; }
     select, .text-input { width:100%; margin-top:7px; border:1px solid var(--line); border-radius:14px; background:var(--panel-2); color:var(--text); padding:12px; outline:none; }
     .full { grid-column:1/-1; }
-    .chord-picks { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+    .chord-tools { display:grid; grid-template-columns:1fr auto auto; gap:8px; margin-top:10px; }
+    .chord-search { width:100%; border:1px solid var(--line); border-radius:12px; background:var(--panel-2); color:var(--text); padding:10px 12px; outline:none; }
+    .small-btn { border:1px solid var(--line); border-radius:12px; background:var(--panel-2); color:#d7ddea; padding:9px 11px; cursor:pointer; }
+    .chord-picks { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; max-height:280px; overflow:auto; padding-right:3px; }
     .chip { border:1px solid var(--line); border-radius:12px; background:var(--panel-2); color:#d7ddea; padding:9px 11px; cursor:pointer; min-width:42px; }
     .chip.selected { background:rgba(139,92,246,.20); border-color:rgba(167,139,250,.76); color:white; box-shadow:inset 0 0 0 1px rgba(139,92,246,.15); }
     .switch-row { display:flex; justify-content:space-between; align-items:center; margin-top:13px; padding-top:13px; border-top:1px solid var(--line); color:#dbe2ee; font-size:13px; }
@@ -124,6 +127,7 @@ HTML = r'''<!doctype html>
 
       <div style="margin-top:16px">
         <label>Select chords</label>
+        <div class="chord-tools"><input class="chord-search" id="chordSearch" placeholder="Search e.g. C#m7 or sus4" aria-label="Search chords"><button class="small-btn" id="selectVisible" type="button">Select shown</button><button class="small-btn" id="clearChords" type="button">Clear</button></div>
         <div class="chord-picks" id="chordPicks"></div>
       </div>
 
@@ -138,25 +142,64 @@ HTML = r'''<!doctype html>
 
 <script>
 (() => {
-  const chordNames = ['A','Am','A7','B7','Bm','C','C7','D','Dm','D7','E','Em','E7','F','G','G7'];
-  const chordShapes = {
-    A:{frets:[-1,0,2,2,2,0], fingers:[0,0,1,2,3,0]},
-    Am:{frets:[-1,0,2,2,1,0], fingers:[0,0,2,3,1,0]},
-    A7:{frets:[-1,0,2,0,2,0], fingers:[0,0,1,0,2,0]},
-    B7:{frets:[-1,2,1,2,0,2], fingers:[0,2,1,3,0,4]},
-    Bm:{frets:[-1,2,4,4,3,2], fingers:[0,1,3,4,2,1], baseFret:2, barre:2},
-    C:{frets:[-1,3,2,0,1,0], fingers:[0,3,2,0,1,0]},
-    C7:{frets:[-1,3,2,3,1,0], fingers:[0,3,2,4,1,0]},
-    D:{frets:[-1,-1,0,2,3,2], fingers:[0,0,0,1,3,2]},
-    Dm:{frets:[-1,-1,0,2,3,1], fingers:[0,0,0,2,3,1]},
-    D7:{frets:[-1,-1,0,2,1,2], fingers:[0,0,0,2,1,3]},
-    E:{frets:[0,2,2,1,0,0], fingers:[0,2,3,1,0,0]},
-    Em:{frets:[0,2,2,0,0,0], fingers:[0,2,3,0,0,0]},
-    E7:{frets:[0,2,0,1,0,0], fingers:[0,2,0,1,0,0]},
-    F:{frets:[1,3,3,2,1,1], fingers:[1,3,4,2,1,1], barre:1},
-    G:{frets:[3,2,0,0,0,3], fingers:[2,1,0,0,0,3]},
-    G7:{frets:[3,2,0,0,0,1], fingers:[3,2,0,0,0,1]}
+  const ROOTS = [
+    {name:'C', pc:0}, {name:'C#', pc:1}, {name:'Db', pc:1}, {name:'D', pc:2},
+    {name:'D#', pc:3}, {name:'Eb', pc:3}, {name:'E', pc:4}, {name:'F', pc:5},
+    {name:'F#', pc:6}, {name:'Gb', pc:6}, {name:'G', pc:7}, {name:'G#', pc:8},
+    {name:'Ab', pc:8}, {name:'A', pc:9}, {name:'A#', pc:10}, {name:'Bb', pc:10}, {name:'B', pc:11}
+  ];
+  const QUALITIES = [
+    {suffix:'', label:'major', pattern:[0,2,2,1,0,0], fingers:[1,3,4,2,1,1]},
+    {suffix:'m', label:'minor', pattern:[0,2,2,0,0,0], fingers:[1,3,4,1,1,1]},
+    {suffix:'7', label:'dominant 7', pattern:[0,2,0,1,0,0], fingers:[1,3,1,2,1,1]},
+    {suffix:'maj7', label:'major 7', pattern:[0,2,1,1,0,0], fingers:[1,4,2,3,1,1]},
+    {suffix:'m7', label:'minor 7', pattern:[0,2,0,0,0,0], fingers:[1,3,1,1,1,1]},
+    {suffix:'6', label:'sixth', pattern:[0,2,2,1,2,0], fingers:[1,2,3,1,4,1]},
+    {suffix:'m6', label:'minor sixth', pattern:[0,2,2,0,2,0], fingers:[1,2,3,1,4,1]},
+    {suffix:'sus2', label:'suspended 2', pattern:[0,2,4,4,0,0], fingers:[1,2,3,4,1,1]},
+    {suffix:'sus4', label:'suspended 4', pattern:[0,2,2,2,0,0], fingers:[1,2,3,4,1,1]},
+    {suffix:'dim', label:'diminished', pattern:[0,1,2,0,2,0], fingers:[1,2,3,1,4,1]},
+    {suffix:'aug', label:'augmented', pattern:[0,3,2,1,1,0], fingers:[1,4,3,2,1,1]},
+    {suffix:'add9', label:'add 9', pattern:[0,2,2,1,0,2], fingers:[1,3,4,2,1,4]},
+    {suffix:'9', label:'dominant 9', pattern:[0,2,0,1,0,2], fingers:[1,3,1,2,1,4]}
+  ];
+  const allChordNames = ROOTS.flatMap(root => QUALITIES.map(q => root.name + q.suffix));
+
+  // Put the shapes guitarists encounter most often at the beginning, while
+  // retaining the complete library beneath them.
+  const COMMON_CHORDS = [
+    'C','D','E','F','G','A','B',
+    'Am','Bm','Dm','Em',
+    'C7','D7','E7','G7','A7','B7',
+    'Cmaj7','Dmaj7','Emaj7','Fmaj7','Gmaj7','Amaj7',
+    'Am7','Bm7','Dm7','Em7',
+    'Asus2','Asus4','Dsus2','Dsus4','Esus4','Gsus4',
+    'Cadd9','Dadd9','Eadd9','Gadd9','Aadd9'
+  ];
+  const commonSet = new Set(COMMON_CHORDS);
+  const chordNames = [
+    ...COMMON_CHORDS.filter(name => allChordNames.includes(name)),
+    ...allChordNames.filter(name => !commonSet.has(name))
+  ];
+  const openShapes = {
+    C:{frets:[-1,3,2,0,1,0], fingers:[0,3,2,0,1,0]}, Cm:{frets:[-1,3,5,5,4,3], fingers:[0,1,3,4,2,1], baseFret:3, barre:3},
+    D:{frets:[-1,-1,0,2,3,2], fingers:[0,0,0,1,3,2]}, Dm:{frets:[-1,-1,0,2,3,1], fingers:[0,0,0,2,3,1]},
+    E:{frets:[0,2,2,1,0,0], fingers:[0,2,3,1,0,0]}, Em:{frets:[0,2,2,0,0,0], fingers:[0,2,3,0,0,0]},
+    F:{frets:[1,3,3,2,1,1], fingers:[1,3,4,2,1,1], barre:1}, G:{frets:[3,2,0,0,0,3], fingers:[2,1,0,0,0,3]},
+    A:{frets:[-1,0,2,2,2,0], fingers:[0,0,1,2,3,0]}, Am:{frets:[-1,0,2,2,1,0], fingers:[0,0,2,3,1,0]},
+    B:{frets:[-1,2,4,4,4,2], fingers:[0,1,2,3,4,1], baseFret:2, barre:2}, Bm:{frets:[-1,2,4,4,3,2], fingers:[0,1,3,4,2,1], baseFret:2, barre:2}
   };
+  function makeShape(name) {
+    if (openShapes[name]) return openShapes[name];
+    const root = ROOTS.find(r => name.startsWith(r.name) && QUALITIES.some(q => name === r.name + q.suffix));
+    const quality = QUALITIES.find(q => name === root.name + q.suffix) || QUALITIES[0];
+    // Use a movable E-family shape. Root fret is pitch class measured from E.
+    let rootFret = (root.pc - 4 + 12) % 12;
+    if (rootFret === 0) rootFret = 12;
+    const frets = quality.pattern.map(offset => rootFret + offset);
+    return {frets, fingers:quality.fingers, baseFret:rootFret, barre:rootFret};
+  }
+  const chordShapes = Object.fromEntries(chordNames.map(name => [name, makeShape(name)]));
   const defaults = { bpm:80, beatsPerBar:4, changeEvery:4, mode:'sequence', accent:true, countIn:false, showDiagram:true, keepAwake:true, selected:['G','D','Em','C'] };
   const saved = JSON.parse(localStorage.getItem('chordMetronomeSettings') || 'null');
   const state = {...defaults, ...(saved || {})};
@@ -164,7 +207,7 @@ HTML = r'''<!doctype html>
   const $ = id => document.getElementById(id);
   const bpm = $('bpm'), bpmValue = $('bpmValue'), startStop = $('startStop');
   const currentChord = $('currentChord'), nextChord = $('nextChord'), status = $('status');
-  const beatsEl = $('beats'), picksEl = $('chordPicks'), preview = $('sequencePreview');
+  const beatsEl = $('beats'), picksEl = $('chordPicks'), preview = $('sequencePreview'), chordSearch = $('chordSearch');
   const diagram = $('chordDiagram'), diagramWrap = $('diagramWrap');
   const barProgressFill = $('barProgressFill');
 
@@ -234,9 +277,14 @@ HTML = r'''<!doctype html>
     diagramWrap.classList.toggle('hidden', !state.showDiagram);
   }
 
+  function visibleChordNames() {
+    const query = (chordSearch.value || '').trim().toLowerCase();
+    return chordNames.filter(name => !query || name.toLowerCase().includes(query));
+  }
+
   function renderPicks() {
     picksEl.innerHTML = '';
-    chordNames.forEach(name => {
+    visibleChordNames().forEach(name => {
       const b = document.createElement('button');
       b.className = 'chip' + (state.selected.includes(name) ? ' selected' : '');
       b.textContent = name;
@@ -407,6 +455,16 @@ HTML = r'''<!doctype html>
   bpm.oninput = e => setBpm(e.target.value);
   $('beatsPerBar').onchange = e => { state.beatsPerBar=Number(e.target.value); renderBeats(); if (isPlaying) animateBarProgress(); save(); };
   $('changeEvery').onchange = e => { state.changeEvery=Number(e.target.value); save(); };
+
+  chordSearch.oninput = renderPicks;
+  $('selectVisible').onclick = () => {
+    state.selected = [...new Set([...state.selected, ...visibleChordNames()])];
+    chordIndex = 0; currentName = state.selected[0]; renderPicks(); updateChordText(); save();
+  };
+  $('clearChords').onclick = () => {
+    state.selected = [currentName || 'G']; chordIndex = 0; currentName = state.selected[0]; renderPicks(); updateChordText(); save();
+  };
+
   $('mode').onchange = e => { state.mode=e.target.value; chordIndex=0; updateChordText(); save(); };
   $('showDiagram').onchange = e => { state.showDiagram=e.target.checked; toggleDiagram(); save(); };
   $('accent').onchange = e => { state.accent=e.target.checked; save(); };
